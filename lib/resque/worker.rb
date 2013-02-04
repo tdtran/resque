@@ -1,3 +1,5 @@
+require 'timeout'
+
 module Resque
   # A Resque Worker processes jobs. On platforms that support fork(2),
   # the worker will fork off a child to process each job. This ensures
@@ -9,6 +11,21 @@ module Resque
   class Worker
     include Resque::Helpers
     extend Resque::Helpers
+
+    # Worker#reconnect in Resque v1.23.0 rescues Redis::BaseConnectionError.
+    # This is only defined in Redis v3.0.x.  Until then, let's redefine this to
+    # manually rescue the various connection related errors.
+    #
+    # /cc https://github.com/defunkt/resque/issues/771
+    BackportedBaseConnectionErrors = [
+      # CannotConnectError
+      # https://github.com/redis/redis-rb/blob/v3.0.2/lib/redis/client.rb#L262-L269
+      Errno::ECONNREFUSED, Timeout::Error,
+
+      # ConnectionError
+      # https://github.com/redis/redis-rb/blob/v3.0.2/lib/redis/client.rb#L205-L206
+      Errno::ECONNRESET, Errno::EPIPE, Errno::ECONNABORTED, Errno::EBADF, Errno::EINVAL
+    ]
 
     # Whether the worker should log basic info to STDOUT
     attr_accessor :verbose
@@ -225,7 +242,7 @@ module Resque
       tries = 0
       begin
         redis.client.reconnect
-      rescue Redis::BaseConnectionError
+      rescue *BackportedBaseConnectionErrors
         if (tries += 1) <= 3
           log "Error reconnecting to Redis; retrying"
           sleep(tries)
@@ -248,7 +265,7 @@ module Resque
     # determine if yours does.
     def fork(job)
       return if @cant_fork
-      
+
       # Only run before_fork hooks if we're actually going to fork
       # (after checking @cant_fork)
       run_hook :before_fork, job
@@ -527,7 +544,7 @@ module Resque
     def idle?
       state == :idle
     end
-    
+
     def will_fork?
       !(@cant_fork || $TESTING)
     end

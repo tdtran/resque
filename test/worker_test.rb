@@ -385,7 +385,7 @@ context "Resque::Worker" do
     workerA.work(0)
     assert $BEFORE_FORK_CALLED
   end
-  
+
   test "Will not call a before_fork hook when the worker can't fork" do
     Resque.redis.flushall
     $BEFORE_FORK_CALLED = false
@@ -479,7 +479,7 @@ context "Resque::Worker" do
         alias_method :original_reconnect, :reconnect
 
         def reconnect
-          raise Redis::BaseConnectionError
+          raise Errno::ECONNREFUSED
         end
       end
 
